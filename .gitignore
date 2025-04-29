@@ -173,5 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+*.code-workspace
+
 .novels/
 .resources/
