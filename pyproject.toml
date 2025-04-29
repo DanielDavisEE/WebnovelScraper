@@ -1,7 +1,11 @@
 [project]
 name = "webnovel-scraper"
 version = "0.0.1"
-dependencies = ["pypub3"]
+dependencies = [
+    "pypub3",
+    "requests",
+    "bs4",
+]
 
 [build-system]
 requires = ["setuptools"]
