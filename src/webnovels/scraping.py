@@ -18,4 +18,5 @@ def get_scraper(novel_url, novel_name) -> BaseScraper:
 if __name__ == '__main__':
     novel_url = 'https://www.lightnovelworld.co/novel/the-perfect-run-24071713/chapters'
     scraper = get_scraper(novel_url, 'The Perfect Run')
-    scraper.download_chapters()
+    scraper.download_all_chapters()
+    scraper.parse_all_chapters()

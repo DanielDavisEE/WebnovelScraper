@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 NOVELS_DIR = Path(__file__).parent / '.novels'
@@ -9,6 +10,9 @@ def create_new_novel(title):
 
     novel_dir = NOVELS_DIR / safe_name
     (novel_dir / 'raw_pages').mkdir(parents=True)
+    (novel_dir / 'chapters').mkdir(parents=True)
     (novel_dir / 'dictionary.txt').touch()
     (novel_dir / 'change_list.csv').touch()
-    (novel_dir / 'chapter_list.csv').touch()
+
+    with open(novel_dir / 'metadata.json', 'w') as metadata:
+        json.dump({'title': title}, metadata)
