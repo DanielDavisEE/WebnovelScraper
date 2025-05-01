@@ -3,13 +3,15 @@ from tkinter import ttk
 
 
 class ScrollableListBox(ttk.Frame):
-    def __init__(self, *args, display_rows, text_options, **kwargs):
+    def __init__(self, *args, display_rows, width=30, text_options=None, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if text_options is None:
+            text_options = []
+
         # Create Listbox
-        self.listbox = tk.Listbox(self, height=display_rows, selectmode=tk.SINGLE)
-        for item in text_options:
-            self.listbox.insert(tk.END, item)
+        self.listbox = tk.Listbox(self, height=display_rows, width=width, selectmode=tk.SINGLE)
+        self.set_options(text_options)
         self.listbox.pack(side="left", fill="both", expand=True)
 
         # Create Scrollbar
@@ -18,6 +20,19 @@ class ScrollableListBox(ttk.Frame):
 
         # Attach scrollbar to the listbox
         self.listbox.config(yscrollcommand=scrollbar.set)
+
+    def delete_all(self):
+        self.listbox.delete(0, tk.END)
+
+    def set_options(self, text_options):
+        self.delete_all()
+        for item in text_options:
+            self.listbox.insert(tk.END, item)
+
+    def get(self):
+        selection = self.listbox.curselection()
+        if selection:
+            return self.listbox.get(selection[0])
 
 
 class ScrollableTextBox(ttk.Frame):
@@ -37,8 +52,11 @@ class ScrollableTextBox(ttk.Frame):
 
         self.textbox.config(yscrollcommand=scrollbar.set)
 
+    def get(self):
+        return self.textbox.get("1.0", "end-1c")
+
     def set(self, text):
-        self.delete("1.0", "end")
+        self.clear()
         self.insert("1.0", text)
 
     def insert(self, index, text):
@@ -61,5 +79,5 @@ class ScrollableTextBox(ttk.Frame):
     def delete(self, start_index, end_index):
         self.textbox.delete(start_index, end_index)
 
-    def get(self):
-        return self.textbox.get("1.0", "end-1c")
+    def clear(self):
+        self.delete("1.0", "end")

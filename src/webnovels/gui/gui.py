@@ -8,7 +8,9 @@ from scraper_panel import ScraperPanel
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Tkinter Notebook with Tab Classes")
+        self.title("WebNovel Editor")
+
+        self.shared_data = {}
 
         # Create notebook
         notebook = ttk.Notebook(self)
@@ -16,8 +18,8 @@ class App(tk.Tk):
             side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Create and add tab pages
-        scraper = ScraperPanel(notebook)
-        editor = EditorPanel(notebook)
+        scraper = ScraperPanel(notebook, shared_data=self.shared_data)
+        editor = EditorPanel(notebook, shared_data=self.shared_data)
 
         notebook.add(scraper, text="Scraping")
         notebook.add(editor, text="Editing")

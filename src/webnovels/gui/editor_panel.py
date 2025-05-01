@@ -2,10 +2,14 @@ import tkinter as tk
 from tkinter import ttk
 from gui_components import ScrollableListBox, ScrollableTextBox
 
+from webnovels.utils import get_novel_titles, get_novel_chapter_titles, get_chapter_text
+
 
 class EditorPanel(ttk.Frame):
-    def __init__(self, parent):
+    def __init__(self, parent, shared_data):
         super().__init__(parent)
+
+        self.shared_data = shared_data
 
         self.novel_selector = None
         self.chapter_selector = None
@@ -15,21 +19,37 @@ class EditorPanel(ttk.Frame):
         self.create_selector_widget()
         self.create_editor_widget()
 
+    def on_novel_title_selection(self, _e):
+        novel_title = self.novel_selector.get()
+        if novel_title:
+            self.chapter_selector.set_options(get_novel_chapter_titles(novel_title))
+        else:
+            self.chapter_selector.delete_all()
+
+    def on_chapter_title_selection(self, _e):
+        # TODO: use editing chapters
+        novel_title = self.novel_selector.get()
+        chapter_title = self.chapter_selector.get()
+        if novel_title and chapter_title:
+            self.chapter_text.set(get_chapter_text(novel_title, chapter_title))
 
     def create_selector_widget(self):
         chapter_select_frame = ttk.Frame(self)
         chapter_select_frame.pack(
             side=tk.LEFT, fill=tk.BOTH, expand=False)
 
-        self.novel_selector = ttk.Combobox(chapter_select_frame, values=['[PH] Novel Name', "Option 1", "Option 2", "Option 3"])
-        self.novel_selector.current(0)
+        self.novel_selector = ttk.Combobox(chapter_select_frame, values=[''] + get_novel_titles())
         self.novel_selector.state(["readonly"])
         self.novel_selector.pack(
             side=tk.TOP, fill=tk.X, expand=False)
 
-        self.chapter_selector = ScrollableListBox(chapter_select_frame, display_rows=20, text_options=[f'[PH] Chapter {i}' for i in range(1, 41)])
+        self.chapter_selector = ScrollableListBox(chapter_select_frame, display_rows=20)
         self.chapter_selector.pack(
             side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Bind event to handler function
+        self.novel_selector.bind("<<ComboboxSelected>>", self.on_novel_title_selection)
+        self.chapter_selector.listbox.bind("<<ListboxSelect>>", self.on_chapter_title_selection)
 
     def create_editor_widget(self):
         chapter_edit_frame = ttk.Frame(self)
@@ -43,9 +63,6 @@ class EditorPanel(ttk.Frame):
         self.chapter_text = ScrollableTextBox(chapter_view_frame)
         self.chapter_text.pack(
             side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.chapter_text.set("""[PH] It was May 8th, 2020 for the third time, and Ryan had already caused two traffic accidents.
-[PH] He blamed the people of New Rome for this. The city’s inhabitants were as nervous as coffee addicts in the morning, and drove their cars like monkeys out for his blood. Moving on the walkway would have been safer.
-[PH] Thankfully, he had saved right before passing the <em>‘Welcome to New Rome’</em> sign at the end of the highway linking the city to the rest of the Campania region.""")
 
         edit_options_frame = ttk.Frame(chapter_edit_frame)
         edit_options_frame.pack(
