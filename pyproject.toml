@@ -11,6 +11,8 @@ dependencies = [
     "requests",
     "bs4",
     "selenium",
+    "pyspellchecker",
+    "python-docx",
 ]
 
 [tool.setuptools]
