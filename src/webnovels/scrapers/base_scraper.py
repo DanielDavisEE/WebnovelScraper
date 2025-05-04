@@ -58,7 +58,7 @@ class BaseScraper:
     def get_page_text(self):
         raise NotImplementedError
 
-    def parse_chapter(self, chapter_html, fname):
+    def parse_chapter(self, chapter_html, fname) -> [str, str]:
         raise NotImplementedError
 
     def parse_all_chapters(self):
@@ -70,6 +70,8 @@ class BaseScraper:
             with open(self.novel_dir / 'raw_html' / chapter_file, 'r') as html_file:
                 response = html_file.read()
             chapter_data.append(self.parse_chapter(response, chapter_file.replace('html', 'txt')))
+
+            (self.novel_dir / 'change_lists' / chapter_file.replace('html', 'csv')).touch()
 
         chapter_data.sort()
         with open(self.novel_dir / 'raw_chapters' / 'index.json', 'w') as index_file:

@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 
 from spellchecker import SpellChecker
 
-from webnovels.utils import NOVELS_DIR, get_file_safe
+from webnovels.utils import NOVELS_DIR, get_file_safe, get_novel_dir
 
 GLOBAL_RESOURCES = Path(__file__).parent / '.resources'
 
@@ -35,6 +35,7 @@ def tokenize(text):
     current_token = ''
     i = 0
     punctuation = set('.,!?;:"\'()[]{} -–—…\n‘’“”')
+    strip_chars = set('.,!?;:"\'()[]{}…‘’“”')
 
     while i < len(text):
         char = text[i]
@@ -60,6 +61,7 @@ def tokenize(text):
 
     return tokens
 
+
 def correct_token(token, spell_checker):
     isolated_word = token
 
@@ -68,6 +70,7 @@ def correct_token(token, spell_checker):
         isolated_word = ''.join(re.split(r'<[\/a-z]{,5}>', isolated_word))
 
     punctuation = '.,!?;:"\'()[]{} -–—…\n‘’“”'
+    strip_chars = '.,!?;:"\'()[]{}…‘’“”'
     isolated_word = isolated_word.strip(punctuation)
 
     if isolated_word:
@@ -113,15 +116,105 @@ def edit_chapter(novel_dir, fname, spell_checker):
         raise RuntimeError('Discrepancy in number of spaces')
     return processed_chapter
 
-def edit_novel(novel_name):
-    novel_dir = NOVELS_DIR / get_file_safe(novel_name)
+
+def get_novel_spellchecker(novel_title):
+    novel_dir = NOVELS_DIR / get_file_safe(novel_title)
 
     spell = SpellChecker()
     spell.word_frequency.load_text_file(GLOBAL_RESOURCES / 'dictionary_ext.txt')
     spell.word_frequency.load_text_file(novel_dir / '.resources' / 'dictionary_ext.txt')
 
-    for fname in (novel_dir / 'raw_chapters').glob('*.txt'):
-        edit_chapter(novel_dir, fname, spell)
+    return novel_dir
+
+
+from datetime import datetime
+
+class EditTracker:
+    """
+    # A single change record
+    {
+        "index": [1, 23],          # Text widget index
+        "tk_index": "1.23",        # Text widget index
+        "old_text": "some text",   # The text deleted
+        "new_text": "some text",   # The text inserted
+    }
+
+    """
+    def __init__(self):
+        self.history = []
+        self.undo_stack = []
+        self.redo_stack = []
+        self.last_text = ""
+
+    def record_change(self, old_text, new_text, index_str):
+
+        record = {
+            "index": [1, 23],  # Text widget index
+            "tk_index": index_str,  # Text widget index
+            "old_text": old_text,
+            "new_text": new_text,
+        }
+        self.history.append(record)
+        self.undo_stack.append(record)
+        self.redo_stack.clear()
+        self.last_text = new_text
+        return record
+
+    def apply_change(self, raw_text, change):
+        if change["type"] == "insert":
+            raw_text.insert(change["index"], change["content"])
+        elif change["type"] == "delete":
+            raw_text.delete(change["index"], f"{change['index']} + {len(change['content'])}c")
+        self.last_text = text_widget.get("1.0", "end-1c")
+
+    def apply_changelist(self, raw_text: str, changelist: list[dict]):
+        for change in changelist:
+            self.apply_change(raw_text, change)
+
+    def apply_inverse(self, text_widget, change):
+        inverse = {
+            "insert": "delete",
+            "delete": "insert"
+        }[change["type"]]
+        inverse_change = {
+            "type": inverse,
+            "content": change["content"],
+            "index": change["index"]
+        }
+        self.apply_change(text_widget, inverse_change)
+
+    def undo(self, text_widget):
+        if not self.undo_stack:
+            return
+        change = self.undo_stack.pop()
+        self.apply_inverse(text_widget, change)
+        self.redo_stack.append(change)
+
+    def redo(self, text_widget):
+        if not self.redo_stack:
+            return
+        change = self.redo_stack.pop()
+        self.apply_change(text_widget, change)
+        self.undo_stack.append(change)
+
+    def save(self, filepath):
+        with open(filepath, "w") as f:
+            json.dump(self.history, f, indent=2)
+
+    def load_chapter(self, novel_title, chapter_idx):
+        novel_dir = get_novel_dir(novel_title)
+        with open(novel_dir / "raw_chapters" / f"{chapter_idx}.txt", "r") as txt_file:
+            self.raw_text = txt_file.read()
+        with open(novel_dir / "change_lists" / f"{chapter_idx}.json", "r") as f:
+            self.history = json.load(f)
+
+        self.undo_stack = self.history.copy()
+        self.redo_stack = []
+
+    @property
+    def processed_text(self):
+        return self.apply_changelist(self.raw_text, self.history)
+
 
 
 """
@@ -209,4 +302,7 @@ def compact_chapters(chapter_dict):
 
 if __name__ == '__main__':
     novel_title = "The Perfect Run"
-    edit_novel(novel_title)
+    novel_dir = NOVELS_DIR / get_file_safe(novel_title)
+    novel_spellchecker = get_novel_spellchecker(novel_title)
+    for fname in (novel_dir / 'raw_chapters').glob('*.txt'):
+        edit_chapter(novel_dir, fname, novel_spellchecker)

@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import font, ttk
 
 
 class ScrollableListBox(ttk.Frame):
@@ -36,6 +36,7 @@ class ScrollableListBox(ttk.Frame):
 
 
 class ScrollableTextBox(ttk.Frame):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -51,6 +52,53 @@ class ScrollableTextBox(ttk.Frame):
             side=tk.LEFT, fill=tk.Y, expand=False)
 
         self.textbox.config(yscrollcommand=scrollbar.set)
+
+        # Create a red underlined font
+        red_underline_font = font.Font(self.textbox, self.textbox.cget("font"))
+        red_underline_font.configure(underline=True)
+
+        # Configure a tag with that font and red foreground
+        self.textbox.tag_configure("red_underline", font=red_underline_font, foreground="red")
+
+        # Create the context menu
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Ignore")
+        self.context_menu.add_command(label="Add to global dictionary")
+        self.context_menu.add_command(label="Add to local dictionary")
+        self.context_menu.add_command(label="Mark wrong", command=self.mark_incorrect)
+
+        # Bind right-click to show context menu
+        self.textbox.bind("<Button-3>", self.show_context_menu)  # For Windows and Linux
+        self.textbox.bind("<Button-2>", self.show_context_menu)  # For macOS (right-click is <Button-2>)
+
+    def show_context_menu(self, event):
+        try:
+            # Check if there is a selection
+            if self.textbox.tag_ranges(tk.SEL):
+                self.context_menu.entryconfig("Ignore", state="normal")
+                self.context_menu.entryconfig("Add to global dictionary", state="normal")
+                self.context_menu.entryconfig("Add to local dictionary", state="normal")
+                self.context_menu.entryconfig("Mark wrong", state="normal")
+            else:
+                # Disable actions that require selection
+                self.context_menu.entryconfig("Ignore", state="disabled")
+                self.context_menu.entryconfig("Add to global dictionary", state="disabled")
+                self.context_menu.entryconfig("Add to local dictionary", state="disabled")
+                self.context_menu.entryconfig("Mark wrong", state="disabled")
+
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def mark_incorrect(self):
+        # Insert and apply the tag
+        self.textbox.tag_add("red_underline", tk.SEL_FIRST, tk.SEL_LAST)  # Tag "red underlined text"
+
+    def get_selected(self):
+        try:
+            return self.textbox.get(tk.SEL_FIRST, tk.SEL_LAST)
+        except tk.TclError:
+            return ""  # Or None
 
     def get(self):
         return self.textbox.get("1.0", "end-1c")

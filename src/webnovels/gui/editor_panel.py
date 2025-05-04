@@ -1,8 +1,10 @@
 import tkinter as tk
 from tkinter import ttk
-from gui_components import ScrollableListBox, ScrollableTextBox
 
-from webnovels.utils import get_novel_titles, get_novel_chapter_titles, get_chapter_text
+from webnovels.editing import EditTracker
+from webnovels.utils import get_chapter_text, get_novel_chapter_titles, get_novel_titles
+
+from gui_components import ScrollableListBox, ScrollableTextBox
 
 
 class EditorPanel(ttk.Frame):
@@ -88,3 +90,46 @@ class EditorPanel(ttk.Frame):
             side=tk.LEFT, fill=tk.BOTH, expand=True)
         ttk.Button(entry_frame, text='[PH] Button 4').pack(
             side=tk.LEFT, fill=tk.BOTH, expand=False)
+
+
+class HistoryEditorGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Editor with Change Tracking")
+        self.geometry("600x400")
+
+        self.tracker = EditTracker()
+
+        self.text = tk.Text(self, wrap="word", undo=False)
+        self.text.pack(fill="both", expand=True)
+
+        self.text.bind("<<Modified>>", self.on_modified)
+        self.bind("<Control-z>", self.undo)
+        self.bind("<Control-y>", self.redo)
+
+        self.menu = tk.Menu(self)
+        self.config(menu=self.menu)
+        file_menu = tk.Menu(self.menu, tearoff=0)
+        file_menu.add_command(label="Save History", command=self.save_history)
+        file_menu.add_command(label="Load History", command=self.load_history)
+        self.menu.add_cascade(label="File", menu=file_menu)
+
+    def get_index_for_offset(self, offset):
+        return self.text.index(f"1.0 + {offset} chars")
+
+    def on_modified(self, event=None):
+        self.text.edit_modified(False)
+        current = self.text.get("1.0", "end-1c")
+        self.tracker.record_change(self.tracker.last_text, current, self.get_index_for_offset)
+
+    def undo(self, _=None):
+        self.tracker.undo(self.text)
+
+    def redo(self, _=None):
+        self.tracker.redo(self.text)
+
+    def save_history(self):
+        self.tracker.save("edit_history.json")
+
+    def load_history(self):
+        self.tracker.load("edit_history.json", self.text)

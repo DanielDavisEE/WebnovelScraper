@@ -21,7 +21,7 @@ class App(tk.Tk):
         scraper = ScraperPanel(notebook, shared_data=self.shared_data)
         editor = EditorPanel(notebook, shared_data=self.shared_data)
 
-        notebook.add(scraper, text="Scraping")
+        # notebook.add(scraper, text="Scraping")
         notebook.add(editor, text="Editing")
 
         # Configure window size and placement

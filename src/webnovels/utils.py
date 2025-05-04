@@ -25,8 +25,7 @@ def create_new_novel(novel_title):
 
     (novel_dir / 'raw_html').mkdir(parents=True)
     (novel_dir / 'raw_chapters').mkdir(parents=True)
-    (novel_dir / 'processed_chapters').mkdir(parents=True)
-    (novel_dir / 'change_list.csv').touch()
+    (novel_dir / 'change_lists').mkdir(parents=True)
 
     with open(novel_dir / 'metadata.json', 'w') as metadata:
         json.dump({'title': novel_title}, metadata, indent=2)
