@@ -1,16 +1,14 @@
 import json
 import re
-from contextlib import contextmanager
+import time
 from pathlib import Path
-
-import docx
-from bs4 import BeautifulSoup
+import logging
 
 from spellchecker import SpellChecker
-
 from webnovels.utils import NOVELS_DIR, get_file_safe, get_novel_dir
 
 GLOBAL_RESOURCES = Path(__file__).parent / '.resources'
+
 
 # @contextmanager
 # def get_resources(resource_dir: Path):
@@ -127,94 +125,146 @@ def get_novel_spellchecker(novel_title):
     return novel_dir
 
 
-from datetime import datetime
+ChangeRecord = dict[str, int | str]
+
 
 class EditTracker:
     """
     # A single change record
     {
-        "index": [1, 23],          # Text widget index
-        "tk_index": "1.23",        # Text widget index
-        "old_text": "some text",   # The text deleted
-        "new_text": "some text",   # The text inserted
+        "start_idx": start_idx,
+        "old_text": "some text",  # The text deleted
+        "new_text": "some text",  # The text inserted
+        "edit_ts": 1234567890     # Time of edit
     }
 
     """
+    MERGE_TIME_LIMIT = 60
+
     def __init__(self):
-        self.history = []
-        self.undo_stack = []
-        self.redo_stack = []
-        self.last_text = ""
+        self.log = logging.getLogger(self.__class__.__name__)
 
-    def record_change(self, old_text, new_text, index_str):
+        self.history: list[ChangeRecord] = []  # AKA undo_stack
+        self.redo_stack: list[ChangeRecord] = []
+        self.mergeable: bool = False  # Flag which indicates the next change may be merged into the previous
 
-        record = {
-            "index": [1, 23],  # Text widget index
-            "tk_index": index_str,  # Text widget index
-            "old_text": old_text,
-            "new_text": new_text,
-        }
-        self.history.append(record)
-        self.undo_stack.append(record)
-        self.redo_stack.clear()
-        self.last_text = new_text
-        return record
+        self.change_json_fp: Path = None
+        self._raw_text: str = None
+        self._processed_text: str = None
 
-    def apply_change(self, raw_text, change):
-        if change["type"] == "insert":
-            raw_text.insert(change["index"], change["content"])
-        elif change["type"] == "delete":
-            raw_text.delete(change["index"], f"{change['index']} + {len(change['content'])}c")
-        self.last_text = text_widget.get("1.0", "end-1c")
+    @property
+    def raw_text(self) -> str:
+        return self._raw_text
 
-    def apply_changelist(self, raw_text: str, changelist: list[dict]):
-        for change in changelist:
-            self.apply_change(raw_text, change)
+    @property
+    def processed_text(self) -> str:
+        # return self.apply_changelist(self.raw_text, self.history)
+        return self._processed_text
 
-    def apply_inverse(self, text_widget, change):
-        inverse = {
-            "insert": "delete",
-            "delete": "insert"
-        }[change["type"]]
-        inverse_change = {
-            "type": inverse,
-            "content": change["content"],
-            "index": change["index"]
-        }
-        self.apply_change(text_widget, inverse_change)
-
-    def undo(self, text_widget):
-        if not self.undo_stack:
+    def record_change(self, start_idx: int, end_idx: int, new_text: str):
+        """
+        Record a new text change and optionally merge with the previous one
+        if it's a consecutive edit (e.g., typing characters sequentially).
+        """
+        if self.processed_text[start_idx:end_idx] == new_text:
+            self.log.warning("Skipping identical change")
             return
-        change = self.undo_stack.pop()
-        self.apply_inverse(text_widget, change)
+
+        change = {
+            "start_idx": start_idx,
+            "old_text": self._processed_text[start_idx:end_idx],
+            "new_text": new_text,
+            "edit_ts": time.time(),
+        }
+        self._processed_text = self._apply_change(self._processed_text, change)
+
+        # Try to merge with the previous change if applicable
+        if self.history:
+            previous_change = self.history[-1]
+            previous_end_idx = previous_change["index"] + len(previous_change["new_text"])
+
+            # Prevent change merging if time limit is exceeded
+            if change["edit_ts"] - previous_change["edit_ts"] > self.MERGE_TIME_LIMIT:
+                self.mergeable = False
+
+            if self.mergeable and previous_end_idx == start_idx:
+                self.log.info("Merging consecutive edit")
+
+                # Overwrite change with the merged change
+                change = {
+                    "start_idx": previous_change["start_idx"],
+                    "old_text": previous_change["old_text"] + change["old_text"],
+                    "new_text": previous_change["new_text"] + change["new_text"],
+                    "edit_ts": time.time(),
+                }
+                self.history.pop()
+
+        self.history.append(change)
+        self.redo_stack.clear()
+
+        self.mergeable = True
+
+    def _apply_change(self, text: str, change: ChangeRecord) -> str:
+        # Calculate the end index from the text string to skip the calculation in _apply_inverse
+        start_idx, end_idx = change["start_idx"], change["start_idx"] + len(change["old_text"])
+        return text[:start_idx] + change["new_text"] + text[end_idx:]
+
+    def _apply_changelist(self, text: str, changelist: list[ChangeRecord]):
+        processed_text = text[:]
+        for change in changelist:
+            processed_text = self._apply_change(processed_text, change)
+        return processed_text
+
+    def _apply_inverse(self, text: str, change: ChangeRecord):
+        inverse_change = {
+            "start_idx": change["start_idx"],
+            "old_text": change["new_text"],
+            "new_text": change["old_text"],
+        }
+        return self._apply_change(text, inverse_change)
+
+    def undo(self):
+        self.mergeable = False
+
+        if not self.history:
+            return
+        change = self.history.pop()
+        self._processed_text = self._apply_inverse(self._processed_text, change)
         self.redo_stack.append(change)
 
-    def redo(self, text_widget):
+    def redo(self):
+        self.mergeable = False
+
         if not self.redo_stack:
             return
         change = self.redo_stack.pop()
-        self.apply_change(text_widget, change)
-        self.undo_stack.append(change)
+        self._processed_text = self._apply_change(self._processed_text, change)
+        self.history.append(change)
 
-    def save(self, filepath):
-        with open(filepath, "w") as f:
-            json.dump(self.history, f, indent=2)
+    def save(self):
+        self.mergeable = False
+
+        with open(self.change_json_fp, "w") as change_json:
+            json.dump(self.history, change_json, indent=2)
 
     def load_chapter(self, novel_title, chapter_idx):
+        self.mergeable = False
+
         novel_dir = get_novel_dir(novel_title)
         with open(novel_dir / "raw_chapters" / f"{chapter_idx}.txt", "r") as txt_file:
-            self.raw_text = txt_file.read()
-        with open(novel_dir / "change_lists" / f"{chapter_idx}.json", "r") as f:
-            self.history = json.load(f)
+            self._raw_text = txt_file.read()
 
-        self.undo_stack = self.history.copy()
+        self.change_json_fp = novel_dir / "change_lists" / f"{chapter_idx}.json"
+        if self.change_json_fp.exists():
+            with open(self.change_json_fp, "r") as change_json:
+                self.history = json.load(change_json)
+        else:
+            self.history = []
+            with open(self.change_json_fp, "x") as change_json:
+                json.dump(self.history, change_json)
+
+        self._processed_text = self._apply_changelist(self.raw_text, self.history)
         self.redo_stack = []
-
-    @property
-    def processed_text(self):
-        return self.apply_changelist(self.raw_text, self.history)
-
 
 
 """
@@ -303,6 +353,8 @@ def compact_chapters(chapter_dict):
 if __name__ == '__main__':
     novel_title = "The Perfect Run"
     novel_dir = NOVELS_DIR / get_file_safe(novel_title)
-    novel_spellchecker = get_novel_spellchecker(novel_title)
-    for fname in (novel_dir / 'raw_chapters').glob('*.txt'):
-        edit_chapter(novel_dir, fname, novel_spellchecker)
+    editor = EditTracker()
+    print(1)
+    # novel_spellchecker = get_novel_spellchecker(novel_title)
+    # for fname in (novel_dir / 'raw_chapters').glob('*.txt'):
+    #     edit_chapter(novel_dir, fname, novel_spellchecker)
