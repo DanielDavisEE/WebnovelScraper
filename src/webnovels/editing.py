@@ -126,6 +126,8 @@ class NovelSpellChecker:
     GLOBAL_DICT_EXT = GLOBAL_RESOURCES / 'dictionary_ext.txt'
 
     def __init__(self, novel_title):
+        self.log = logging.getLogger(self.__class__.__name__)
+
         novel_dir = NOVELS_DIR / get_file_safe(novel_title)
 
         self.LOCAL_DICT_EXT = novel_dir / '.resources' / 'dictionary_ext.txt'
@@ -135,13 +137,25 @@ class NovelSpellChecker:
         self._spell.word_frequency.load_text_file(self.LOCAL_DICT_EXT)
 
     def get_potential_errors(self, text):
-        space_indices = [i for i, c in enumerate(text) if c == ' ']
+        space_indices = [-1] + [i for i, c in enumerate(text) if c in {' ', '\n'}] + [len(text)]
 
-        # Also get consecutive white space
+        potential_errors = []
+        cleaned_tokens = []
+        for list_idx in range(len(space_indices) - 1):
+            start_index, end_index = space_indices[list_idx], space_indices[list_idx + 1]
+            if start_index + 1 == end_index:
+                potential_errors.append([start_index, end_index])
+            cleaned_tokens.append(self.clean_token(text[start_index + 1:end_index]))
 
-    def clean_token(self, text, start_index, end_index):
-        token = text[start_index:end_index]
+        # TODO: merge consecutive space errors
 
+        # TODO: capitalisation??
+        unknown_words = self._spell.unknown(cleaned_tokens)
+        self.log.debug(', '.join(unknown_words))
+
+        # TODO: get index ranges of misspellings
+
+    def clean_token(self, token):
         # Special case: HTML tags
         if '<' in token and '>' in token:
             token = ''.join(re.split(r'<[\/a-z]{,5}>', token))
@@ -152,7 +166,7 @@ class NovelSpellChecker:
         allowed_before = '([{‘“'
         allowed_after = '.,!?;:")]}…’”'
 
-        isolated_word = token.lstrip(allowed_before).rstrip(allowed_after)
+        return token.lstrip(allowed_before).rstrip(allowed_after)
 
     def candidates(self, word):
         return self._spell.candidates(word)
@@ -395,6 +409,10 @@ if __name__ == '__main__':
     novel_title = "The Perfect Run"
     novel_dir = NOVELS_DIR / get_file_safe(novel_title)
     editor = EditTracker()
+    editor.load_chapter(novel_title, 'Chapter 1: Quicksave')
+
+    speller = NovelSpellChecker(novel_title)
+    speller.get_potential_errors(editor.processed_text)
     print(1)
     # novel_spellchecker = get_novel_spellchecker(novel_title)
     # for fname in (novel_dir / 'raw_chapters').glob('*.txt'):
