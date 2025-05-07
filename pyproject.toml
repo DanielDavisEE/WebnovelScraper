@@ -15,5 +15,5 @@ dependencies = [
     "python-docx",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[project.scripts]
+webnovel_gui = "webnovels.gui.gui:main"

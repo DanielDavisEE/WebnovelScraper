@@ -54,7 +54,7 @@ class LightNovelWorldScraper(BaseScraper):
             raise RuntimeError("No chapter-list <ul> found.")
         return chapters
 
-    def parse_chapter(self, chapter_html, fname):
+    def parse_chapter(self, chapter_html: str, fname: str) -> str:
         index_soup = BeautifulSoup(chapter_html, 'html.parser')
 
         chapter_title = index_soup.find('span', class_='chapter-title').text
@@ -64,4 +64,4 @@ class LightNovelWorldScraper(BaseScraper):
         with open(self.novel_dir / 'raw_chapters' / fname, 'w') as chapter_file:
             chapter_file.write(page_text)
 
-        return fname, chapter_title
+        return chapter_title

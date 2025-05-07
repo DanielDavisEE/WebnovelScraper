@@ -1,11 +1,12 @@
 import json
+import logging
 import re
 import time
 from pathlib import Path
-import logging
 
 from spellchecker import SpellChecker
-from webnovels.utils import NOVELS_DIR, get_file_safe, get_novel_dir
+
+from webnovels.utils import NOVELS_DIR, get_chapter_index, get_file_safe, get_novel_dir
 
 GLOBAL_RESOURCES = Path(__file__).parent / '.resources'
 
@@ -115,17 +116,55 @@ def edit_chapter(novel_dir, fname, spell_checker):
     return processed_chapter
 
 
-def get_novel_spellchecker(novel_title):
-    novel_dir = NOVELS_DIR / get_file_safe(novel_title)
-
-    spell = SpellChecker()
-    spell.word_frequency.load_text_file(GLOBAL_RESOURCES / 'dictionary_ext.txt')
-    spell.word_frequency.load_text_file(novel_dir / '.resources' / 'dictionary_ext.txt')
-
-    return novel_dir
-
-
 ChangeRecord = dict[str, int | str]
+
+
+class NovelSpellChecker:
+    """
+
+    """
+    GLOBAL_DICT_EXT = GLOBAL_RESOURCES / 'dictionary_ext.txt'
+
+    def __init__(self, novel_title):
+        novel_dir = NOVELS_DIR / get_file_safe(novel_title)
+
+        self.LOCAL_DICT_EXT = novel_dir / '.resources' / 'dictionary_ext.txt'
+
+        self._spell = SpellChecker()
+        self._spell.word_frequency.load_text_file(self.GLOBAL_DICT_EXT)
+        self._spell.word_frequency.load_text_file(self.LOCAL_DICT_EXT)
+
+    def get_potential_errors(self, text):
+        space_indices = [i for i, c in enumerate(text) if c == ' ']
+
+        # Also get consecutive white space
+
+    def clean_token(self, text, start_index, end_index):
+        token = text[start_index:end_index]
+
+        # Special case: HTML tags
+        if '<' in token and '>' in token:
+            token = ''.join(re.split(r'<[\/a-z]{,5}>', token))
+
+        # punctuation = '.,!?;:"\'()[]{} -–—…\n‘’“”'
+        # strip_chars = '.,!?;:"\'()[]{}…‘’“”'
+
+        allowed_before = '([{‘“'
+        allowed_after = '.,!?;:")]}…’”'
+
+        isolated_word = token.lstrip(allowed_before).rstrip(allowed_after)
+
+    def candidates(self, word):
+        return self._spell.candidates(word)
+
+    def add_word(self, word, local=True):
+        self._spell.word_frequency.add(word)
+        if local:
+            with open(self.LOCAL_DICT_EXT, 'a') as dict_ext:
+                dict_ext.write(word)
+        else:
+            with open(self.GLOBAL_DICT_EXT, 'a') as dict_ext:
+                dict_ext.write(word)
 
 
 class EditTracker:
@@ -247,10 +286,12 @@ class EditTracker:
         with open(self.change_json_fp, "w") as change_json:
             json.dump(self.history, change_json, indent=2)
 
-    def load_chapter(self, novel_title, chapter_idx):
+    def load_chapter(self, novel_title, chapter_title):
         self.mergeable = False
 
         novel_dir = get_novel_dir(novel_title)
+        chapter_idx = get_chapter_index(novel_title, chapter_title)
+
         with open(novel_dir / "raw_chapters" / f"{chapter_idx}.txt", "r") as txt_file:
             self._raw_text = txt_file.read()
 

@@ -24,12 +24,24 @@ class ScrollableListBox(ttk.Frame):
     def delete_all(self):
         self.listbox.delete(0, tk.END)
 
+    def get_options(self):
+        return self.listbox.get(0, tk.END)
+
     def set_options(self, text_options):
         self.delete_all()
         for item in text_options:
             self.listbox.insert(tk.END, item)
 
     def get(self):
+        return self.listbox.curselection()
+
+    def set(self, index):
+        self.listbox.selection_clear(0, tk.END)
+        self.listbox.selection_set(index)
+        self.listbox.activate(index)
+        self.listbox.see(index)  # Scroll to the item if it's not visible
+
+    def get_value(self):
         selection = self.listbox.curselection()
         if selection:
             return self.listbox.get(selection[0])

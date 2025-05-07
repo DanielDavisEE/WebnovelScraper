@@ -41,27 +41,27 @@ def get_novel_titles():
     return titles
 
 
+def get_chapter_info(novel_title):
+    novel_dir = get_novel_dir(novel_title)
+
+    if not (novel_dir / 'metadata.json').exists():
+        raise RuntimeError
+
+    with open(novel_dir / 'metadata.json', 'r') as metadata_file:
+        metadata = json.load(metadata_file)
+
+    if 'chapter_info' not in metadata:
+        raise RuntimeError
+
+    return metadata['chapter_info']
+
+
 def get_novel_chapter_titles(novel_title):
-    novel_dir = get_novel_dir(novel_title)
-
-    if (novel_dir / 'raw_chapters' / 'index.json').exists():
-        with open(novel_dir / 'raw_chapters' / 'index.json', 'r') as metadata:
-            chapter_info = json.load(metadata)
-        return [info[1] for info in sorted(chapter_info, key=lambda info: int(info[0].split('.')[0]))]
+    return [info['chapter_title'] for info in get_chapter_info(novel_title)]
 
 
-def get_chapter_text(novel_title, chapter_title):
-    novel_dir = get_novel_dir(novel_title)
-
-    if not (novel_dir / 'raw_chapters' / 'index.json').exists():
-        raise RuntimeError
-
-    with open(novel_dir / 'raw_chapters' / 'index.json', 'r') as metadata:
-        chapter_info = json.load(metadata)
-    fname = next(info[0] for info in chapter_info if info[1] == chapter_title)
-
-    if not (novel_dir / 'raw_chapters' / fname).exists():
-        raise RuntimeError
-
-    with open(novel_dir / 'raw_chapters' / fname, 'r') as chapter_file:
-        return chapter_file.read()
+def get_chapter_index(novel_title, chapter_title):
+    index = next((info['name_index'] for info in get_chapter_info(novel_title) if info['chapter_title'] == chapter_title), None)
+    if index is None:
+        raise RuntimeError(f"Could not find chapter '{chapter_title}' in novel '{novel_title}'")
+    return index

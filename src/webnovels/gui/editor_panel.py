@@ -1,17 +1,19 @@
+import logging
 import tkinter as tk
 from tkinter import ttk
 
 from webnovels.editing import EditTracker
-from webnovels.utils import get_chapter_text, get_novel_chapter_titles, get_novel_titles
+from webnovels.utils import get_novel_titles, get_novel_chapter_titles
 
 from gui_components import ScrollableListBox, ScrollableTextBox
 
 
 class EditorPanel(ttk.Frame):
-    def __init__(self, parent, shared_data):
+    def __init__(self, parent):
         super().__init__(parent)
+        self.log = logging.getLogger(self.__class__.__name__)
 
-        self.shared_data = shared_data
+        self.edit_tracker = EditTracker()
 
         self.novel_selector = None
         self.chapter_selector = None
@@ -21,19 +23,20 @@ class EditorPanel(ttk.Frame):
         self.create_selector_widget()
         self.create_editor_widget()
 
-    def on_novel_title_selection(self, _e):
+    def on_novel_title_selection(self, *_):
         novel_title = self.novel_selector.get()
         if novel_title:
             self.chapter_selector.set_options(get_novel_chapter_titles(novel_title))
         else:
             self.chapter_selector.delete_all()
 
-    def on_chapter_title_selection(self, _e):
-        # TODO: use editing chapters
+    def on_chapter_title_selection(self, *_):
         novel_title = self.novel_selector.get()
-        chapter_title = self.chapter_selector.get()
+        chapter_title = self.chapter_selector.get_value()
         if novel_title and chapter_title:
-            self.chapter_text.set(get_chapter_text(novel_title, chapter_title))
+            self.log.debug(f"Loading chapter '{chapter_title}' from novel '{novel_title}'")
+            self.edit_tracker.load_chapter(novel_title, chapter_title)
+            self.chapter_text.set(self.edit_tracker.processed_text)
 
     def create_selector_widget(self):
         chapter_select_frame = ttk.Frame(self)
@@ -53,6 +56,33 @@ class EditorPanel(ttk.Frame):
         self.novel_selector.bind("<<ComboboxSelected>>", self.on_novel_title_selection)
         self.chapter_selector.listbox.bind("<<ListboxSelect>>", self.on_chapter_title_selection)
 
+    def _undo(self):
+        self.edit_tracker.undo()
+        self.chapter_text.set(self.edit_tracker.processed_text)
+
+    def _redo(self):
+        self.edit_tracker.redo()
+        self.chapter_text.set(self.edit_tracker.processed_text)
+
+    def _save(self):
+        self.edit_tracker.save()
+
+    def _prev(self):
+        current_index = self.chapter_selector.get()
+        if current_index:
+            prev_index = current_index[0] - 1
+            if 0 <= prev_index < len(self.chapter_selector.get_options()):
+                self.chapter_selector.set(prev_index)
+        self.on_chapter_title_selection()
+
+    def _next(self):
+        current_index = self.chapter_selector.get()
+        if current_index:
+            next_index = current_index[0] + 1
+            if 0 <= next_index < len(self.chapter_selector.get_options()):
+                self.chapter_selector.set(next_index)
+        self.on_chapter_title_selection()
+
     def create_editor_widget(self):
         chapter_edit_frame = ttk.Frame(self)
         chapter_edit_frame.pack(
@@ -70,26 +100,18 @@ class EditorPanel(ttk.Frame):
         edit_options_frame.pack(
             side=tk.TOP, fill=tk.BOTH, expand=False)
 
-        ttk.Button(edit_options_frame, text='[PH] Button 1').grid(
+        ttk.Button(edit_options_frame, text='Redo').grid(
             row=0, column=0, padx=5, pady=5)
-        ttk.Button(edit_options_frame, text='[PH] Button 2').grid(
-            row=1, column=0, padx=5, pady=5)
+        ttk.Button(edit_options_frame, text='Undo').grid(
+            row=0, column=1, padx=5, pady=5)
+        ttk.Button(edit_options_frame, text='Save').grid(
+            row=0, column=2, padx=5, pady=5)
+        ttk.Button(edit_options_frame, text='Previous', command=self._prev).grid(
+            row=0, column=3, padx=5, pady=5)
+        ttk.Button(edit_options_frame, text='Next', command=self._next).grid(
+            row=0, column=4, padx=5, pady=5)
 
-        dropdown_frame = ttk.Frame(edit_options_frame)
-        dropdown_frame.grid(
-            row=0, column=1, padx=5, pady=5, sticky=tk.EW)
-        ttk.Combobox(dropdown_frame, values=['[PH] Word Suggestion', "Option 1", "Option 2", "Option 3"]).pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Button(dropdown_frame, text='[PH] Button 3').pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=False)
 
-        entry_frame = ttk.Frame(edit_options_frame)
-        entry_frame.grid(
-            row=1, column=1, padx=5, pady=5, sticky=tk.EW)
-        ttk.Entry(entry_frame).pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Button(entry_frame, text='[PH] Button 4').pack(
-            side=tk.LEFT, fill=tk.BOTH, expand=False)
 
 
 class HistoryEditorGUI(tk.Tk):

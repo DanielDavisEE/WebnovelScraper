@@ -3,10 +3,8 @@ from tkinter import ttk
 
 
 class ScraperPanel(ttk.Frame):
-    def __init__(self, parent, shared_data):
+    def __init__(self, parent):
         super().__init__(parent)
-
-        self.shared_data = shared_data
 
         self.create_widgets()
 
