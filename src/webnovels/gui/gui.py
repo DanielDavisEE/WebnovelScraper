@@ -1,9 +1,14 @@
+import logging.config
+from webnovels.logging_config import LOGGING_CONFIG
+
 import tkinter as tk
 from tkinter import ttk
 
 from webnovels.gui.editor_panel import EditorPanel
 from webnovels.gui.scraper_panel import ScraperPanel
 
+logging.config.dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger('myproject')
 
 class App(tk.Tk):
     def __init__(self):

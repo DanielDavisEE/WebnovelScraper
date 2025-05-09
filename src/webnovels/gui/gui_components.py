@@ -10,7 +10,10 @@ class ScrollableListBox(ttk.Frame):
             text_options = []
 
         # Create Listbox
-        self.listbox = tk.Listbox(self, height=display_rows, width=width, selectmode=tk.SINGLE)
+        self.listbox = tk.Listbox(self, height=display_rows, width=width,
+                                  selectmode=tk.SINGLE,
+                                  exportselection=False,
+                                  activestyle='none')
         self.set_options(text_options)
         self.listbox.pack(side="left", fill="both", expand=True)
 
@@ -52,7 +55,7 @@ class ScrollableTextBox(ttk.Frame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.textbox = tk.Text(self, height=5, wrap="word")
+        self.textbox = tk.Text(self, height=5, wrap="word", exportselection=False)
         self.textbox.pack(
             side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -81,7 +84,7 @@ class ScrollableTextBox(ttk.Frame):
 
         # Bind right-click to show context menu
         self.textbox.bind("<Button-3>", self.show_context_menu)  # For Windows and Linux
-        self.textbox.bind("<Button-2>", self.show_context_menu)  # For macOS (right-click is <Button-2>)
+        # self.textbox.bind("<Button-2>", self.show_context_menu)  # For macOS (right-click is <Button-2>)
 
     def show_context_menu(self, event):
         try:

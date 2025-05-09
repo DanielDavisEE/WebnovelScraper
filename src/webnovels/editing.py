@@ -16,6 +16,7 @@ class NovelSpellChecker:
 
     """
     GLOBAL_DICT_EXT = Path(__file__).parent / '.resources' / 'dictionary_ext.txt'
+    WHITESPACE = set(' \n\t')
 
     def __init__(self, novel_title):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -29,15 +30,22 @@ class NovelSpellChecker:
         self._spell.word_frequency.load_text_file(self.LOCAL_DICT_EXT)
 
     def get_potential_errors(self, text):
-        space_indices = [-1] + [i for i, c in enumerate(text) if c in {' ', '\n'}] + [len(text)]
+        whitespace_indices = [i for i, c in enumerate(text) if c in self.WHITESPACE] + [len(text)]
 
         potential_errors = []
-        cleaned_tokens = []
-        for list_idx in range(len(space_indices) - 1):
-            start_index, end_index = space_indices[list_idx], space_indices[list_idx + 1]
+        cleaned_tokens = set()
+
+        start_index = 0
+        for end_index in whitespace_indices:
+            if start_index == end_index:
+                self.log.warning(f"Equal space indices found ({start_index}), continuing")
+                continue
             if start_index + 1 == end_index:
-                potential_errors.append([start_index, end_index])
-            cleaned_tokens.append(self.clean_token(text[start_index + 1:end_index]))
+                self.log.warning(f"Consecutive spaces found ({start_index, end_index}), continuing")
+                continue
+                # potential_errors.append([start_index, end_index])
+            cleaned_tokens.add(self.clean_token(text[start_index + 1:end_index]))
+            start_index = end_index + 1
 
         # TODO: merge consecutive space errors
 
@@ -126,7 +134,7 @@ class EditTracker:
         # Try to merge with the previous change if applicable
         if self.history:
             previous_change = self.history[-1]
-            previous_end_idx = previous_change["index"] + len(previous_change["new_text"])
+            previous_end_idx = previous_change["start_idx"] + len(previous_change["new_text"])
 
             # Prevent change merging if time limit is exceeded
             if change["edit_ts"] - previous_change["edit_ts"] > self.MERGE_TIME_LIMIT:
@@ -144,6 +152,7 @@ class EditTracker:
                 }
                 self.history.pop()
 
+        self.log.debug(f"Adding change to stack: {change}")
         self.history.append(change)
         self.redo_stack.clear()
 
@@ -169,30 +178,37 @@ class EditTracker:
         return self._apply_change(text, inverse_change)
 
     def undo(self):
-        self.mergeable = False
-
         if not self.history:
             return
+
+        self.mergeable = False
+
         change = self.history.pop()
         self._processed_text = self._apply_inverse(self._processed_text, change)
         self.redo_stack.append(change)
 
     def redo(self):
-        self.mergeable = False
-
         if not self.redo_stack:
             return
+
+        self.mergeable = False
+
         change = self.redo_stack.pop()
         self._processed_text = self._apply_change(self._processed_text, change)
         self.history.append(change)
 
     def save(self):
+        if not self.change_json_fp:
+            return
+
         self.mergeable = False
 
+        self.log.debug(f"Saving edits to {self.change_json_fp}")
         with open(self.change_json_fp, "w") as change_json:
             json.dump(self.history, change_json, indent=2)
 
     def load_chapter(self, novel_title, chapter_title):
+        self.log.debug(f"Loading chapter '{chapter_title}' from novel '{novel_title}'")
         self.mergeable = False
 
         novel_dir = get_novel_dir(novel_title)
@@ -206,6 +222,7 @@ class EditTracker:
             with open(self.change_json_fp, "r") as change_json:
                 self.history = json.load(change_json)
         else:
+            self.log.debug(f"Initialising change list at {self.change_json_fp}")
             self.history = []
             with open(self.change_json_fp, "x") as change_json:
                 json.dump(self.history, change_json)

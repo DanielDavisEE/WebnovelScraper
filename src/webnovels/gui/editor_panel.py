@@ -1,6 +1,7 @@
 import logging
 import tkinter as tk
 from tkinter import ttk
+import difflib
 
 from webnovels.editing import EditTracker
 from webnovels.utils import get_novel_titles, get_novel_chapter_titles
@@ -23,7 +24,13 @@ class EditorPanel(ttk.Frame):
         self.create_selector_widget()
         self.create_editor_widget()
 
+        self.bind_all("<Control-s>", self._save)
+        self.bind_all("<Control-z>", self._undo)
+        self.bind_all("<Control-y>", self._redo)
+
     def on_novel_title_selection(self, *_):
+        self.edit_tracker.save()
+
         novel_title = self.novel_selector.get()
         if novel_title:
             self.chapter_selector.set_options(get_novel_chapter_titles(novel_title))
@@ -31,6 +38,8 @@ class EditorPanel(ttk.Frame):
             self.chapter_selector.delete_all()
 
     def on_chapter_title_selection(self, *_):
+        self.edit_tracker.save()
+
         novel_title = self.novel_selector.get()
         chapter_title = self.chapter_selector.get_value()
         if novel_title and chapter_title:
@@ -43,7 +52,7 @@ class EditorPanel(ttk.Frame):
         chapter_select_frame.pack(
             side=tk.LEFT, fill=tk.BOTH, expand=False)
 
-        self.novel_selector = ttk.Combobox(chapter_select_frame, values=[''] + get_novel_titles())
+        self.novel_selector = ttk.Combobox(chapter_select_frame, values=[''] + get_novel_titles(), exportselection=False)
         self.novel_selector.state(["readonly"])
         self.novel_selector.pack(
             side=tk.TOP, fill=tk.X, expand=False)
@@ -56,32 +65,42 @@ class EditorPanel(ttk.Frame):
         self.novel_selector.bind("<<ComboboxSelected>>", self.on_novel_title_selection)
         self.chapter_selector.listbox.bind("<<ListboxSelect>>", self.on_chapter_title_selection)
 
-    def _undo(self):
+    def _undo(self, *_):
+        self.log.debug('Undo')
         self.edit_tracker.undo()
         self.chapter_text.set(self.edit_tracker.processed_text)
+        return "break"
 
-    def _redo(self):
+    def _redo(self, *_):
+        self.log.debug('Redo')
         self.edit_tracker.redo()
         self.chapter_text.set(self.edit_tracker.processed_text)
+        return "break"
 
-    def _save(self):
+    def _save(self, *_):
+        self.log.debug('Save')
         self.edit_tracker.save()
+        return "break"
 
-    def _prev(self):
+    def _prev(self, *_):
+        self.log.debug('Previous')
         current_index = self.chapter_selector.get()
         if current_index:
             prev_index = current_index[0] - 1
             if 0 <= prev_index < len(self.chapter_selector.get_options()):
                 self.chapter_selector.set(prev_index)
         self.on_chapter_title_selection()
+        return "break"
 
-    def _next(self):
+    def _next(self, *_):
+        self.log.debug('Next')
         current_index = self.chapter_selector.get()
         if current_index:
             next_index = current_index[0] + 1
             if 0 <= next_index < len(self.chapter_selector.get_options()):
                 self.chapter_selector.set(next_index)
         self.on_chapter_title_selection()
+        return "break"
 
     def create_editor_widget(self):
         chapter_edit_frame = ttk.Frame(self)
@@ -100,58 +119,39 @@ class EditorPanel(ttk.Frame):
         edit_options_frame.pack(
             side=tk.TOP, fill=tk.BOTH, expand=False)
 
-        ttk.Button(edit_options_frame, text='Redo').grid(
+        ttk.Button(edit_options_frame, text='Redo', command=self._redo).grid(
             row=0, column=0, padx=5, pady=5)
-        ttk.Button(edit_options_frame, text='Undo').grid(
+        ttk.Button(edit_options_frame, text='Undo', command=self._undo).grid(
             row=0, column=1, padx=5, pady=5)
-        ttk.Button(edit_options_frame, text='Save').grid(
+        ttk.Button(edit_options_frame, text='Save', command=self._save).grid(
             row=0, column=2, padx=5, pady=5)
         ttk.Button(edit_options_frame, text='Previous', command=self._prev).grid(
             row=0, column=3, padx=5, pady=5)
         ttk.Button(edit_options_frame, text='Next', command=self._next).grid(
             row=0, column=4, padx=5, pady=5)
 
+        self.chapter_text.textbox.bind("<<Modified>>", self.on_text_change)
+        # self.chapter_text.textbox.bind("<<Paste>>", self.on_text_change)
 
+    def on_text_change(self, event=None):
+        self.log.debug(f"Modified: {event}")
+        widget = event.widget
+        if widget.edit_modified():
+            widget.edit_modified(False)  # reset flag
 
+        new_text = self.chapter_text.get()
+        old_text = self.edit_tracker.processed_text
 
-class HistoryEditorGUI(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Editor with Change Tracking")
-        self.geometry("600x400")
+        if new_text == old_text:
+            return  # No change
 
-        self.tracker = EditTracker()
-
-        self.text = tk.Text(self, wrap="word", undo=False)
-        self.text.pack(fill="both", expand=True)
-
-        self.text.bind("<<Modified>>", self.on_modified)
-        self.bind("<Control-z>", self.undo)
-        self.bind("<Control-y>", self.redo)
-
-        self.menu = tk.Menu(self)
-        self.config(menu=self.menu)
-        file_menu = tk.Menu(self.menu, tearoff=0)
-        file_menu.add_command(label="Save History", command=self.save_history)
-        file_menu.add_command(label="Load History", command=self.load_history)
-        self.menu.add_cascade(label="File", menu=file_menu)
-
-    def get_index_for_offset(self, offset):
-        return self.text.index(f"1.0 + {offset} chars")
-
-    def on_modified(self, event=None):
-        self.text.edit_modified(False)
-        current = self.text.get("1.0", "end-1c")
-        self.tracker.record_change(self.tracker.last_text, current, self.get_index_for_offset)
-
-    def undo(self, _=None):
-        self.tracker.undo(self.text)
-
-    def redo(self, _=None):
-        self.tracker.redo(self.text)
-
-    def save_history(self):
-        self.tracker.save("edit_history.json")
-
-    def load_history(self):
-        self.tracker.load("edit_history.json", self.text)
+        matcher = difflib.SequenceMatcher(None, old_text, new_text)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag in ("replace", "delete", "insert"):
+                self.log.debug(f"Detected change '{tag}'")
+                self.edit_tracker.record_change(
+                    start_idx=i1,
+                    end_idx=i2,
+                    new_text=new_text[j1:j2],
+                )
+                break  # Only handle the first meaningful change
