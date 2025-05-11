@@ -1,10 +1,13 @@
+import gzip
 import json
 import logging
+import pkgutil
 import re
 import time
 from pathlib import Path
 
 from spellchecker import SpellChecker
+from spellchecker.utils import ensure_unicode
 
 from webnovels.utils import NOVELS_DIR, get_chapter_index, get_file_safe, get_novel_dir
 
@@ -25,7 +28,20 @@ class NovelSpellChecker:
 
         self.LOCAL_DICT_EXT = novel_dir / '.resources' / 'dictionary_ext.txt'
 
-        self._spell = SpellChecker()
+        self._spell = SpellChecker(case_sensitive=True, language=None)
+
+        # Manually load the language file or else we can't do case-sensitive. This will lead to some side effects
+        # with proper nouns since the words in the corpus are all lowered.
+        # TODO: Fix this?
+        filename = f"resources/en.json.gz"
+        try:
+            json_open = pkgutil.get_data("spellchecker", filename)
+        except FileNotFoundError as exc:
+            msg = f"The provided dictionary language (en) does not exist!"
+            raise ValueError(msg) from exc
+        lang_dict = json.loads(gzip.decompress(json_open).decode("utf-8"))
+        self._spell.word_frequency.load_json(lang_dict)
+
         self._spell.word_frequency.load_text_file(self.GLOBAL_DICT_EXT)
         self._spell.word_frequency.load_text_file(self.LOCAL_DICT_EXT)
 
@@ -40,20 +56,30 @@ class NovelSpellChecker:
             if start_index == end_index:
                 self.log.warning(f"Equal space indices found ({start_index}), continuing")
                 continue
+
             if start_index + 1 == end_index:
                 self.log.warning(f"Consecutive spaces found ({start_index, end_index}), continuing")
-                continue
-                # potential_errors.append([start_index, end_index])
-            cleaned_tokens.add(self.clean_token(text[start_index + 1:end_index]))
+            else:
+                cleaned_tokens.add(self.clean_token(text[start_index:end_index]))
             start_index = end_index + 1
 
-        # TODO: merge consecutive space errors
+        # TODO: find consecutive space errors
 
-        # TODO: capitalisation??
         unknown_words = self._spell.unknown(cleaned_tokens)
         self.log.debug(', '.join(unknown_words))
 
         # TODO: get index ranges of misspellings
+
+    def flag_misspellings(self, words):
+        """The subset of `words` that do not appear in the dictionary
+
+        Args:
+            words (list): List of words to determine which are not in the corpus
+        Returns:
+            set: The set of those words from the input that are not in the corpus"""
+        tmp_words = [ensure_unicode(w) for w in words]
+        tmp = [w if self._case_sensitive else w.lower() for w in tmp_words if self._check_if_should_check(w)]
+        return {w for w in tmp if w not in self._word_frequency.dictionary}
 
     def clean_token(self, token):
         # Special case: HTML tags
