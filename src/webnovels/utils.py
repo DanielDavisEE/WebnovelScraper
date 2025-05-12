@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 NOVELS_DIR = Path(__file__).parent / '.novels'
-
+WHITESPACE = set(' \n\t')
 
 def get_file_safe(text):
     keepcharacters = (' ', '.', '_')
@@ -65,3 +65,24 @@ def get_chapter_index(novel_title, chapter_title):
     if index is None:
         raise RuntimeError(f"Could not find chapter '{chapter_title}' in novel '{novel_title}'")
     return index
+
+
+def to_tk_index(text: str, index: int):
+    lines = text[:index].split('\n')
+    line_no = len(lines)
+    col_no = len(lines[-1])
+    return f"{line_no}.{col_no}"
+
+
+def to_str_index(text: str, tk_index: str):
+    line_str, col_str = tk_index.split('.')
+    line = int(line_str)
+    col = int(col_str)
+
+    lines = text.split('\n')
+    if line > len(lines):
+        raise IndexError("Line number out of range.")
+
+    # Sum lengths of lines before the target one (including newline chars)
+    char_index = sum(len(ln) + 1 for ln in lines[:line - 1]) + col
+    return char_index

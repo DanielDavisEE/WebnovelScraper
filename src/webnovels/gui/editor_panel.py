@@ -3,8 +3,8 @@ import tkinter as tk
 from tkinter import ttk
 import difflib
 
-from webnovels.editing import EditTracker
-from webnovels.utils import get_novel_titles, get_novel_chapter_titles
+from webnovels.editing import EditTracker, NovelSpellChecker
+from webnovels.utils import get_novel_titles, get_novel_chapter_titles, to_tk_index
 
 from gui_components import ScrollableListBox, ScrollableTextBox
 
@@ -15,11 +15,12 @@ class EditorPanel(ttk.Frame):
         self.log = logging.getLogger(self.__class__.__name__)
 
         self.edit_tracker = EditTracker()
+        self.spell_checker = NovelSpellChecker()
 
         self.novel_selector = None
         self.chapter_selector = None
 
-        self.chapter_text = None
+        self.chapter_text: ScrollableTextBox = None
 
         self.create_selector_widget()
         self.create_editor_widget()
@@ -34,6 +35,7 @@ class EditorPanel(ttk.Frame):
         novel_title = self.novel_selector.get()
         if novel_title:
             self.chapter_selector.set_options(get_novel_chapter_titles(novel_title))
+            self.spell_checker.load_novel(novel_title)
         else:
             self.chapter_selector.delete_all()
 
@@ -46,6 +48,11 @@ class EditorPanel(ttk.Frame):
             self.log.debug(f"Loading chapter '{chapter_title}' from novel '{novel_title}'")
             self.edit_tracker.load_chapter(novel_title, chapter_title)
             self.chapter_text.set(self.edit_tracker.processed_text)
+
+            errors = self.spell_checker.get_potential_errors(self.edit_tracker.processed_text)
+            for start_index, end_index in errors:
+                self.chapter_text.mark_incorrect(to_tk_index(self.edit_tracker.processed_text, start_index),
+                                                 to_tk_index(self.edit_tracker.processed_text, end_index))
 
     def create_selector_widget(self):
         chapter_select_frame = ttk.Frame(self)
@@ -132,6 +139,33 @@ class EditorPanel(ttk.Frame):
 
         self.chapter_text.textbox.bind("<<Modified>>", self.on_text_change)
         # self.chapter_text.textbox.bind("<<Paste>>", self.on_text_change)
+
+        # Create the context menu
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Ignore")
+        self.context_menu.add_command(label="Add to global dictionary")#, command=self.spell_checker.add_word(self.chapter_text.get_selected()))
+        self.context_menu.add_command(label="Add to local dictionary")
+
+        # Bind right-click to show context menu
+        self.chapter_text.textbox.bind("<Button-3>", self.on_right_click, add='+')  # For Windows and Linux
+        # self.textbox.bind("<Button-2>", self.show_context_menu)  # For macOS (right-click is <Button-2>)
+
+    def on_right_click(self, event):
+        try:
+            # Check if there is a selection
+            if self.chapter_text.textbox.tag_ranges(tk.SEL):
+                self.context_menu.entryconfig("Ignore", state="normal")
+                self.context_menu.entryconfig("Add to global dictionary", state="normal")
+                self.context_menu.entryconfig("Add to local dictionary", state="normal")
+            else:
+                # Disable actions that require selection
+                self.context_menu.entryconfig("Ignore", state="disabled")
+                self.context_menu.entryconfig("Add to global dictionary", state="disabled")
+                self.context_menu.entryconfig("Add to local dictionary", state="disabled")
+
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
 
     def on_text_change(self, event=None):
         self.log.debug(f"Modified: {event}")

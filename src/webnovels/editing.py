@@ -9,7 +9,7 @@ from pathlib import Path
 from spellchecker import SpellChecker
 from spellchecker.utils import ensure_unicode
 
-from webnovels.utils import NOVELS_DIR, get_chapter_index, get_file_safe, get_novel_dir
+from webnovels.utils import WHITESPACE, NOVELS_DIR, get_chapter_index, get_file_safe, get_novel_dir
 
 ChangeRecord = dict[str, int | str]
 
@@ -19,11 +19,14 @@ class NovelSpellChecker:
 
     """
     GLOBAL_DICT_EXT = Path(__file__).parent / '.resources' / 'dictionary_ext.txt'
-    WHITESPACE = set(' \n\t')
+    LOCAL_DICT_EXT = None
 
-    def __init__(self, novel_title):
+    def __init__(self):
         self.log = logging.getLogger(self.__class__.__name__)
 
+        self._spell = None
+
+    def load_novel(self, novel_title: str):
         novel_dir = NOVELS_DIR / get_file_safe(novel_title)
 
         self.LOCAL_DICT_EXT = novel_dir / '.resources' / 'dictionary_ext.txt'
@@ -46,10 +49,9 @@ class NovelSpellChecker:
         self._spell.word_frequency.load_text_file(self.LOCAL_DICT_EXT)
 
     def get_potential_errors(self, text):
-        whitespace_indices = [i for i, c in enumerate(text) if c in self.WHITESPACE] + [len(text)]
+        whitespace_indices = [i for i, c in enumerate(text) if c in WHITESPACE] + [len(text)]
 
         potential_errors = []
-        cleaned_tokens = set()
 
         start_index = 0
         for end_index in whitespace_indices:
@@ -58,28 +60,24 @@ class NovelSpellChecker:
                 continue
 
             if start_index + 1 == end_index:
-                self.log.warning(f"Consecutive spaces found ({start_index, end_index}), continuing")
+                self.log.warning(f"Consecutive spaces found {start_index, end_index}, continuing")
+                potential_errors.append((start_index, end_index))
             else:
-                cleaned_tokens.add(self.clean_token(text[start_index:end_index]))
+                cleaned_token = self.clean_token(text[start_index:end_index])
+                if self._spell._check_if_should_check(cleaned_token):
+                    if cleaned_token not in self._spell.word_frequency.dictionary:
+                        try:
+                            cleaned_start_index = text.index(cleaned_token, start_index, end_index)
+                        except ValueError:
+                            self.log.warning(f"Could not find word '{cleaned_token}' in '{text[start_index:end_index]}' {start_index, end_index}")
+                        else:
+                            potential_errors.append((cleaned_start_index, cleaned_start_index + len(cleaned_token)))
+
             start_index = end_index + 1
 
         # TODO: find consecutive space errors
 
-        unknown_words = self._spell.unknown(cleaned_tokens)
-        self.log.debug(', '.join(unknown_words))
-
-        # TODO: get index ranges of misspellings
-
-    def flag_misspellings(self, words):
-        """The subset of `words` that do not appear in the dictionary
-
-        Args:
-            words (list): List of words to determine which are not in the corpus
-        Returns:
-            set: The set of those words from the input that are not in the corpus"""
-        tmp_words = [ensure_unicode(w) for w in words]
-        tmp = [w if self._case_sensitive else w.lower() for w in tmp_words if self._check_if_should_check(w)]
-        return {w for w in tmp if w not in self._word_frequency.dictionary}
+        return potential_errors
 
     def clean_token(self, token):
         # Special case: HTML tags
@@ -92,7 +90,7 @@ class NovelSpellChecker:
         allowed_before = '([{‘“'
         allowed_after = '.,!?;:")]}…’”'
 
-        return token.lstrip(allowed_before).rstrip(allowed_after)
+        return ensure_unicode(token.lstrip(allowed_before).rstrip(allowed_after))
 
     def candidates(self, word):
         return self._spell.candidates(word)

@@ -1,10 +1,14 @@
+import logging
 import tkinter as tk
 from tkinter import font, ttk
+
+from webnovels.utils import WHITESPACE
 
 
 class ScrollableListBox(ttk.Frame):
     def __init__(self, *args, display_rows, width=30, text_options=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.log = logging.getLogger(self.__class__.__name__)
 
         if text_options is None:
             text_options = []
@@ -54,6 +58,7 @@ class ScrollableTextBox(ttk.Frame):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.log = logging.getLogger(self.__class__.__name__)
 
         self.textbox = tk.Text(self, height=5, wrap="word", exportselection=False)
         self.textbox.pack(
@@ -72,42 +77,47 @@ class ScrollableTextBox(ttk.Frame):
         red_underline_font = font.Font(self.textbox, self.textbox.cget("font"))
         red_underline_font.configure(underline=True)
 
-        # Configure a tag with that font and red foreground
         self.textbox.tag_configure("red_underline", font=red_underline_font, foreground="red")
 
-        # Create the context menu
-        self.context_menu = tk.Menu(self, tearoff=0)
-        self.context_menu.add_command(label="Ignore")
-        self.context_menu.add_command(label="Add to global dictionary")
-        self.context_menu.add_command(label="Add to local dictionary")
-        self.context_menu.add_command(label="Mark wrong", command=self.mark_incorrect)
+        self.textbox.bind("<Button-3>", self.on_right_click)
+        self.textbox.tag_bind("red_underline", "<Button-3>", self._on_error_right_click)
 
-        # Bind right-click to show context menu
-        self.textbox.bind("<Button-3>", self.show_context_menu)  # For Windows and Linux
-        # self.textbox.bind("<Button-2>", self.show_context_menu)  # For macOS (right-click is <Button-2>)
+    def mark_incorrect(self, start_index: str, end_index: str):
+        """ Mark a range of text in red font with an underline
 
-    def show_context_menu(self, event):
-        try:
-            # Check if there is a selection
-            if self.textbox.tag_ranges(tk.SEL):
-                self.context_menu.entryconfig("Ignore", state="normal")
-                self.context_menu.entryconfig("Add to global dictionary", state="normal")
-                self.context_menu.entryconfig("Add to local dictionary", state="normal")
-                self.context_menu.entryconfig("Mark wrong", state="normal")
-            else:
-                # Disable actions that require selection
-                self.context_menu.entryconfig("Ignore", state="disabled")
-                self.context_menu.entryconfig("Add to global dictionary", state="disabled")
-                self.context_menu.entryconfig("Add to local dictionary", state="disabled")
-                self.context_menu.entryconfig("Mark wrong", state="disabled")
-
-            self.context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.context_menu.grab_release()
-
-    def mark_incorrect(self):
+        Args:
+            start_index: a Tk style index for the start of the range
+            end_index: a Tk style index for the end of the range
+        """
         # Insert and apply the tag
-        self.textbox.tag_add("red_underline", tk.SEL_FIRST, tk.SEL_LAST)  # Tag "red underlined text"
+        self.textbox.tag_add("red_underline", start_index, end_index)
+
+
+    def _move_text_cursor_to_event(self, event):
+        self.textbox.focus_set()
+
+        # Get the index of the mouse pointer in "line.column" format
+        index = self.textbox.index(f"@{event.x},{event.y}")
+
+        # Move the insertion cursor to the click location
+        self.textbox.mark_set("insert", index)
+
+    def on_right_click(self, event):
+        self.log.debug("TextWidget right click")
+        self._move_text_cursor_to_event(event)
+
+    def _on_error_right_click(self, event):
+        self._move_text_cursor_to_event(event)
+
+        cursor_index = self.textbox.index("insert")
+        text = self.textbox.get("1.0", "end-1c")
+        cursor_pos = self.textbox.count("1.0", cursor_index, "chars")[0]
+        self.log.debug(f"{cursor_pos=}")
+
+        start_index = max(text.rfind(w, 0, cursor_pos) for w in WHITESPACE)
+        end_index = min([text.find(w, cursor_pos) for w in WHITESPACE if w in text])
+
+        self.log.info(f"Right clicked error: '{text[start_index+1:end_index]}' at ({start_index}, {end_index})")
 
     def get_selected(self):
         try:
