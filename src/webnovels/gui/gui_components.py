@@ -2,6 +2,7 @@ import logging
 import tkinter as tk
 from tkinter import font, ttk
 
+from webnovels.gui.backend import Backend
 from webnovels.utils import WHITESPACE
 
 
@@ -60,6 +61,8 @@ class ScrollableTextBox(ttk.Frame):
         super().__init__(*args, **kwargs)
         self.log = logging.getLogger(self.__class__.__name__)
 
+        self.backend = Backend()
+
         self.textbox = tk.Text(self, height=5, wrap="word", exportselection=False)
         self.textbox.pack(
             side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -82,6 +85,8 @@ class ScrollableTextBox(ttk.Frame):
         self.textbox.bind("<Button-3>", self.on_right_click)
         self.textbox.tag_bind("red_underline", "<Button-3>", self._on_error_right_click)
 
+        self.whitespace = None
+
     def mark_incorrect(self, start_index: str, end_index: str):
         """ Mark a range of text in red font with an underline
 
@@ -92,7 +97,6 @@ class ScrollableTextBox(ttk.Frame):
         # Insert and apply the tag
         self.textbox.tag_add("red_underline", start_index, end_index)
 
-
     def _move_text_cursor_to_event(self, event):
         self.textbox.focus_set()
 
@@ -101,6 +105,8 @@ class ScrollableTextBox(ttk.Frame):
 
         # Move the insertion cursor to the click location
         self.textbox.mark_set("insert", index)
+
+        self.backend.selected_error = None
 
     def on_right_click(self, event):
         self.log.debug("TextWidget right click")
@@ -114,10 +120,16 @@ class ScrollableTextBox(ttk.Frame):
         cursor_pos = self.textbox.count("1.0", cursor_index, "chars")[0]
         self.log.debug(f"{cursor_pos=}")
 
-        start_index = max(text.rfind(w, 0, cursor_pos) for w in WHITESPACE)
-        end_index = min([text.find(w, cursor_pos) for w in WHITESPACE if w in text])
+        # FIXME: can't handle first word being wrong
+        tmp_indices = [text.rfind(w, 0, cursor_pos) for w in self.whitespace]
+        start_index = max(i for i in tmp_indices if i >= 0)
 
-        self.log.info(f"Right clicked error: '{text[start_index+1:end_index]}' at ({start_index}, {end_index})")
+        tmp_indices = [text.find(w, cursor_pos) for w in self.whitespace] + [len(text)]
+        end_index = min(i for i in tmp_indices if i >= 0)
+
+        self.log.info(f"Right clicked error: '{text[start_index + 1:end_index]}' at ({start_index}, {end_index})")
+
+        self.backend.selected_error = start_index + 1, end_index
 
     def get_selected(self):
         try:
@@ -131,6 +143,7 @@ class ScrollableTextBox(ttk.Frame):
     def set(self, text):
         self.clear()
         self.insert("1.0", text)
+        self.whitespace = [w for w in WHITESPACE if w in text]
 
     def insert(self, index, text):
         """

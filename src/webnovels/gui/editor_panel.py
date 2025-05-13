@@ -1,12 +1,11 @@
+import difflib
 import logging
 import tkinter as tk
 from tkinter import ttk
-import difflib
-
-from webnovels.editing import EditTracker, NovelSpellChecker
-from webnovels.utils import get_novel_titles, get_novel_chapter_titles, to_tk_index
 
 from gui_components import ScrollableListBox, ScrollableTextBox
+from webnovels.gui.backend import Backend
+from webnovels.utils import get_novel_chapter_titles, get_novel_titles, to_tk_index
 
 
 class EditorPanel(ttk.Frame):
@@ -14,8 +13,7 @@ class EditorPanel(ttk.Frame):
         super().__init__(parent)
         self.log = logging.getLogger(self.__class__.__name__)
 
-        self.edit_tracker = EditTracker()
-        self.spell_checker = NovelSpellChecker()
+        self.backend = Backend()
 
         self.novel_selector = None
         self.chapter_selector = None
@@ -29,30 +27,38 @@ class EditorPanel(ttk.Frame):
         self.bind_all("<Control-z>", self._undo)
         self.bind_all("<Control-y>", self._redo)
 
+    @property
+    def edit_tracker(self):
+        return self.backend.edit_tracker
+
+    @property
+    def spell_checker(self):
+        return self.backend.spell_checker
+
     def on_novel_title_selection(self, *_):
-        self.edit_tracker.save()
+        self.backend.save()
 
         novel_title = self.novel_selector.get()
         if novel_title:
             self.chapter_selector.set_options(get_novel_chapter_titles(novel_title))
-            self.spell_checker.load_novel(novel_title)
+            self.backend.load_novel(novel_title)
         else:
             self.chapter_selector.delete_all()
 
     def on_chapter_title_selection(self, *_):
-        self.edit_tracker.save()
+        self.backend.save()
 
         novel_title = self.novel_selector.get()
         chapter_title = self.chapter_selector.get_value()
         if novel_title and chapter_title:
             self.log.debug(f"Loading chapter '{chapter_title}' from novel '{novel_title}'")
-            self.edit_tracker.load_chapter(novel_title, chapter_title)
-            self.chapter_text.set(self.edit_tracker.processed_text)
+            chapter_text = self.backend.load_chapter(chapter_title)
+            self.chapter_text.set(chapter_text)
 
-            errors = self.spell_checker.get_potential_errors(self.edit_tracker.processed_text)
+            errors = self.backend.potential_errors
             for start_index, end_index in errors:
-                self.chapter_text.mark_incorrect(to_tk_index(self.edit_tracker.processed_text, start_index),
-                                                 to_tk_index(self.edit_tracker.processed_text, end_index))
+                self.chapter_text.mark_incorrect(to_tk_index(chapter_text, start_index),
+                                                 to_tk_index(chapter_text, end_index))
 
     def create_selector_widget(self):
         chapter_select_frame = ttk.Frame(self)
@@ -74,19 +80,19 @@ class EditorPanel(ttk.Frame):
 
     def _undo(self, *_):
         self.log.debug('Undo')
-        self.edit_tracker.undo()
-        self.chapter_text.set(self.edit_tracker.processed_text)
+        self.backend.undo()
+        self.chapter_text.set(self.backend.chapter_text)
         return "break"
 
     def _redo(self, *_):
         self.log.debug('Redo')
-        self.edit_tracker.redo()
-        self.chapter_text.set(self.edit_tracker.processed_text)
+        self.backend.redo()
+        self.chapter_text.set(self.backend.chapter_text)
         return "break"
 
     def _save(self, *_):
         self.log.debug('Save')
-        self.edit_tracker.save()
+        self.backend.save()
         return "break"
 
     def _prev(self, *_):
@@ -143,7 +149,7 @@ class EditorPanel(ttk.Frame):
         # Create the context menu
         self.context_menu = tk.Menu(self, tearoff=0)
         self.context_menu.add_command(label="Ignore")
-        self.context_menu.add_command(label="Add to global dictionary")#, command=self.spell_checker.add_word(self.chapter_text.get_selected()))
+        self.context_menu.add_command(label="Add to global dictionary")  # , command=self.backend.add_word(self.chapter_text.get_selected()))
         self.context_menu.add_command(label="Add to local dictionary")
 
         # Bind right-click to show context menu
@@ -174,7 +180,7 @@ class EditorPanel(ttk.Frame):
             widget.edit_modified(False)  # reset flag
 
         new_text = self.chapter_text.get()
-        old_text = self.edit_tracker.processed_text
+        old_text = self.backend.chapter_text
 
         if new_text == old_text:
             return  # No change
@@ -183,7 +189,7 @@ class EditorPanel(ttk.Frame):
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag in ("replace", "delete", "insert"):
                 self.log.debug(f"Detected change '{tag}'")
-                self.edit_tracker.record_change(
+                self.backend.make_edit(
                     start_idx=i1,
                     end_idx=i2,
                     new_text=new_text[j1:j2],

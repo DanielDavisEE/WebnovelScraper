@@ -129,6 +129,8 @@ class EditTracker:
         self._raw_text: str = None
         self._processed_text: str = None
 
+        self.last_save = time.time()
+
     @property
     def raw_text(self) -> str:
         return self._raw_text
@@ -230,6 +232,7 @@ class EditTracker:
         self.log.debug(f"Saving edits to {self.change_json_fp}")
         with open(self.change_json_fp, "w") as change_json:
             json.dump(self.history, change_json, indent=2)
+        self.last_save = time.time()
 
     def load_chapter(self, novel_title, chapter_title):
         self.log.debug(f"Loading chapter '{chapter_title}' from novel '{novel_title}'")
